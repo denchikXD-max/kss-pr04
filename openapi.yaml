@@ -1,13 +1,10 @@
-# Шаблон специфікації OpenAPI 3.1 до практичної роботи № 4.
-# Замініть усі позначки <…> відповідно до вашого варіанта (VARIANTS.md).
-# Перевірка: npm run lint · документація: npm run docs · імітаційний сервер: npm run mock
 openapi: 3.1.0
 info:
-  title: <Назва системи> API
+  title: Бібліотека коледжу API
   version: 1.0.0
-  summary: <Одне речення про призначення API>
+  summary: REST API інформаційної системи бібліотеки коледжу для обліку книг, примірників, читачів та видач
   description: |
-    Варіант № <N>. Виконав(ла): <Прізвище Ім’я>, група 456-Д.
+    Варіант № 1. Виконав: Денис Чапко, група 456-Д.
 
     **Домовленості:** шляхи від `/api/v1`; ресурси – іменники в множині (kebab-case);
     JSON у camelCase; дати – ISO 8601; колекції – сторінками `{ items, page, pageSize, total }`;
@@ -20,9 +17,15 @@ servers:
     description: Локальний сервер розробки
 tags:
   - name: auth
-    description: Автентифікація
-  # - name: <ресурс>
-  #   description: <опис>
+    description: Автентифікація користувачів
+  - name: books
+    description: Каталог книг та управління виданнями
+  - name: copies
+    description: Фізичні примірники книг бібліотечного фонду
+  - name: readers
+    description: Облік читачів бібліотеки (студенти та викладачі)
+  - name: loans
+    description: Журнал видач та повернень книг
 security:
   - bearerAuth: []
 
@@ -31,7 +34,7 @@ paths:
     post:
       tags: [auth]
       operationId: login
-      summary: Вхід у систему
+      summary: Вхід у систему та отримання токена доступу
       x-kss-action: true
       security: []
       requestBody:
@@ -42,7 +45,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Вхід успішний
+          description: Вхід успішний, токен згенеровано
           content:
             application/json:
               schema:
@@ -52,14 +55,415 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  # Приклад структури колекції (розкоментуйте й адаптуйте):
-  # /<resources>:
-  #   get:      список зі сторінками, фільтрами й сортуванням
-  #   post:     створення → 201 + Location
-  # /<resources>/{<resource>Id}:
-  #   get / patch / delete (204)
-  # /<resources>/{<resource>Id}/<sub-resources>:   вкладена колекція
-  # /<resources>/{<resource>Id}/<action>:           дія (x-kss-action: true)
+  /books:
+    get:
+      tags: [books]
+      operationId: listBooks
+      summary: Отримати список книг із фільтрацією та пагінацією
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: genre
+          in: query
+          description: Фільтр за жанром
+          schema:
+            type: string
+        - name: author
+          in: query
+          description: Фільтр за автором
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Поле для сортування (наприклад, title, -publicationYear, -createdAt)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Сторінка списку книг
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      tags: [books]
+      operationId: createBook
+      summary: Додати нову книгу до каталогу (лише бібліотекар)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookRequest"
+      responses:
+        "201":
+          description: Книгу успішно додано
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /books/{bookId}:
+    get:
+      tags: [books]
+      operationId: getBookById
+      summary: Отримати детальну інформацію про книгу за ідентифікатором
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Інформація про книгу
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "304":
+          description: Ресурс не змінювався (умовний запит If-None-Match)
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [books]
+      operationId: updateBook
+      summary: Частково оновити дані книги (лише бібліотекар)
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookRequest"
+      responses:
+        "200":
+          description: Дані книги оновлено
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+    delete:
+      tags: [books]
+      operationId: deleteBook
+      summary: Видалити книгу з каталогу (лише бібліотекар)
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "204":
+          description: Книгу успішно видалено
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /books/{bookId}/copies:
+    get:
+      tags: [copies]
+      operationId: listBookCopies
+      summary: Отримати список фізичних примірників книги
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          description: Фільтр за станом примірника
+          schema:
+            $ref: "#/components/schemas/BookCopyStatus"
+      responses:
+        "200":
+          description: Сторінка примірників книги
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookCopyPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      tags: [copies]
+      operationId: createBookCopy
+      summary: Зареєструвати новий примірник книги (лише бібліотекар)
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookCopyRequest"
+      responses:
+        "201":
+          description: Примірник успішно зареєстровано
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookCopy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /readers:
+    get:
+      tags: [readers]
+      operationId: listReaders
+      summary: Отримати список читачів із фільтрацією (лише бібліотекар)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: search
+          in: query
+          description: Пошук за ПІБ або номером читацького квитка
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Сортування читачів
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Сторінка читачів
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReaderPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [readers]
+      operationId: createReader
+      summary: Зареєструвати нового читача (лише бібліотекар)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReaderRequest"
+      responses:
+        "201":
+          description: Читача успішно зареєстровано
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reader"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /readers/{readerId}:
+    get:
+      tags: [readers]
+      operationId: getReaderById
+      summary: Отримати дані читача за ідентифікатором
+      parameters:
+        - $ref: "#/components/parameters/ReaderId"
+      responses:
+        "200":
+          description: Інформація про читача
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reader"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /loans:
+    get:
+      tags: [loans]
+      operationId: listLoans
+      summary: Отримати журнал видач книг (лише бібліотекар)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          description: Фільтр за статусом видачі
+          schema:
+            $ref: "#/components/schemas/LoanStatus"
+        - name: readerId
+          in: query
+          description: Фільтр за ідентифікатором читача
+          schema:
+            type: integer
+        - name: bookId
+          in: query
+          description: Фільтр за ідентифікатором книги
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Сторінка журналу видач
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [loans]
+      operationId: createLoan
+      summary: Оформити видачу книги читачеві (лише бібліотекар)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLoanRequest"
+      responses:
+        "201":
+          description: Видачу успішно оформлено
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /loans/{loanId}:
+    get:
+      tags: [loans]
+      operationId: getLoanById
+      summary: Отримати детальну інформацію про запис видачі
+      parameters:
+        - $ref: "#/components/parameters/LoanId"
+      responses:
+        "200":
+          description: Деталі видачі
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /loans/{loanId}/return:
+    post:
+      tags: [loans]
+      operationId: returnLoan
+      summary: Зареєструвати повернення книги (лише бібліотекар)
+      x-kss-action: true
+      parameters:
+        - $ref: "#/components/parameters/LoanId"
+      responses:
+        "200":
+          description: Книгу успішно повернуто до бібліотеки
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
 components:
   securitySchemes:
@@ -86,6 +490,37 @@ components:
         minimum: 1
         maximum: 50
         default: 10
+    BookId:
+      name: bookId
+      in: path
+      required: true
+      description: Унікальний ідентифікатор книги
+      schema:
+        type: integer
+        minimum: 1
+    ReaderId:
+      name: readerId
+      in: path
+      required: true
+      description: Унікальний ідентифікатор читача
+      schema:
+        type: integer
+        minimum: 1
+    LoanId:
+      name: loanId
+      in: path
+      required: true
+      description: Унікальний ідентифікатор запису видачі
+      schema:
+        type: integer
+        minimum: 1
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Значення ETag для оптимістичного блокування змін
+      schema:
+        type: string
 
   headers:
     Location:
@@ -93,6 +528,10 @@ components:
       schema:
         type: string
         format: uri-reference
+    ETag:
+      description: Ідентифікатор поточної версії представлення сутності
+      schema:
+        type: string
 
   schemas:
     LoginRequest:
@@ -108,8 +547,8 @@ components:
           format: password
           minLength: 8
       example:
-        email: student@college.example.ua
-        password: student123
+        email: librarian@college.example.ua
+        password: librarianSecret123
 
     LoginResponse:
       type: object
@@ -126,6 +565,385 @@ components:
         accessToken: 2f1c9a54-8d3e-4b7a-9f1e-6c2d8a4b0e71
         tokenType: Bearer
         expiresIn: 3600
+
+    Book:
+      type: object
+      required:
+        - id
+        - isbn
+        - title
+        - author
+        - publicationYear
+        - genre
+        - totalCopies
+        - availableCopies
+        - createdAt
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        isbn:
+          type: string
+          example: "978-0132350884"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Clean Code"
+        author:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Robert C. Martin"
+        publicationYear:
+          type: integer
+          example: 2008
+        genre:
+          type: string
+          example: "Програмування"
+        totalCopies:
+          type: integer
+          minimum: 0
+          example: 5
+        availableCopies:
+          type: integer
+          minimum: 0
+          readOnly: true
+          example: 3
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-09-01T08:30:00Z"
+
+    CreateBookRequest:
+      type: object
+      required:
+        - isbn
+        - title
+        - author
+        - publicationYear
+        - genre
+        - totalCopies
+      additionalProperties: false
+      properties:
+        isbn:
+          type: string
+          minLength: 10
+          maxLength: 17
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        author:
+          type: string
+          minLength: 1
+          maxLength: 100
+        publicationYear:
+          type: integer
+        genre:
+          type: string
+        totalCopies:
+          type: integer
+          minimum: 1
+      example:
+        isbn: "978-0132350884"
+        title: "Clean Code"
+        author: "Robert C. Martin"
+        publicationYear: 2008
+        genre: "Програмування"
+        totalCopies: 5
+
+    UpdateBookRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        isbn:
+          type: string
+          minLength: 10
+          maxLength: 17
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        author:
+          type: string
+          minLength: 1
+          maxLength: 100
+        publicationYear:
+          type: integer
+        genre:
+          type: string
+        totalCopies:
+          type: integer
+          minimum: 1
+      example:
+        title: "Clean Code (2nd Edition)"
+        totalCopies: 6
+
+    BookPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Book"
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 42
+
+    BookCopyStatus:
+      type: string
+      enum: [available, borrowed, maintenance, lost]
+      example: available
+
+    BookCopy:
+      type: object
+      required:
+        - id
+        - bookId
+        - inventoryNumber
+        - status
+        - locationShelf
+        - acquiredAt
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 101
+        bookId:
+          type: integer
+          readOnly: true
+          example: 1
+        inventoryNumber:
+          type: string
+          example: "INV-2026-00101"
+        status:
+          $ref: "#/components/schemas/BookCopyStatus"
+        locationShelf:
+          type: string
+          example: "A-12"
+        acquiredAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-09-02T10:15:00Z"
+
+    CreateBookCopyRequest:
+      type: object
+      required: [inventoryNumber, locationShelf]
+      additionalProperties: false
+      properties:
+        inventoryNumber:
+          type: string
+          minLength: 3
+          maxLength: 30
+        locationShelf:
+          type: string
+          minLength: 1
+          maxLength: 20
+      example:
+        inventoryNumber: "INV-2026-00101"
+        locationShelf: "A-12"
+
+    BookCopyPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookCopy"
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 3
+
+    Reader:
+      type: object
+      required:
+        - id
+        - ticketNumber
+        - fullName
+        - email
+        - phone
+        - registeredAt
+        - activeLoansCount
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        ticketNumber:
+          type: string
+          example: "TICK-456-01"
+        fullName:
+          type: string
+          example: "Іван Петренко"
+        email:
+          type: string
+          format: email
+          example: "i.petrenko@college.example.ua"
+        phone:
+          type: string
+          example: "+380501234567"
+        registeredAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-09-01T09:00:00Z"
+        activeLoansCount:
+          type: integer
+          readOnly: true
+          example: 1
+
+    CreateReaderRequest:
+      type: object
+      required: [ticketNumber, fullName, email, phone]
+      additionalProperties: false
+      properties:
+        ticketNumber:
+          type: string
+          minLength: 3
+          maxLength: 20
+        fullName:
+          type: string
+          minLength: 3
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          minLength: 10
+          maxLength: 20
+      example:
+        ticketNumber: "TICK-456-01"
+        fullName: "Іван Петренко"
+        email: "i.petrenko@college.example.ua"
+        phone: "+380501234567"
+
+    ReaderPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reader"
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 15
+
+    LoanStatus:
+      type: string
+      enum: [active, returned, overdue]
+      example: active
+
+    Loan:
+      type: object
+      required:
+        - id
+        - bookId
+        - copyId
+        - readerId
+        - librarianId
+        - status
+        - issuedAt
+        - dueDate
+        - returnedAt
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        bookId:
+          type: integer
+          example: 1
+        copyId:
+          type: integer
+          example: 101
+        readerId:
+          type: integer
+          example: 1
+        librarianId:
+          type: integer
+          readOnly: true
+          example: 5
+        status:
+          $ref: "#/components/schemas/LoanStatus"
+        issuedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-11-01T10:00:00Z"
+        dueDate:
+          type: string
+          format: date
+          example: "2026-11-20"
+        returnedAt:
+          type: [string, "null"]
+          format: date-time
+          readOnly: true
+          example: null
+
+    CreateLoanRequest:
+      type: object
+      required: [bookId, copyId, readerId, dueDate]
+      additionalProperties: false
+      properties:
+        bookId:
+          type: integer
+        copyId:
+          type: integer
+        readerId:
+          type: integer
+        dueDate:
+          type: string
+          format: date
+      example:
+        bookId: 1
+        copyId: 101
+        readerId: 1
+        dueDate: "2026-11-20"
+
+    LoanPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Loan"
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 8
 
     ProblemDetails:
       type: object
@@ -176,7 +994,7 @@ components:
           schema:
             $ref: "#/components/schemas/ProblemDetails"
     Forbidden:
-      description: Недостатньо прав
+      description: Недостатньо прав для виконання операції
       content:
         application/problem+json:
           schema:
@@ -188,13 +1006,19 @@ components:
           schema:
             $ref: "#/components/schemas/ProblemDetails"
     Conflict:
-      description: Конфлікт зі станом ресурсу
+      description: Конфлікт із поточним станом ресурсу
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    PreconditionFailed:
+      description: Стан ресурсу змінився іншим запитом (ETag не збігається)
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/ProblemDetails"
     ValidationFailed:
-      description: Дані не пройшли перевірку
+      description: Дані не пройшли перевірку валідації
       content:
         application/problem+json:
           schema:
