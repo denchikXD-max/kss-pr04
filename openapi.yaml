@@ -1,0 +1,201 @@
+# Шаблон специфікації OpenAPI 3.1 до практичної роботи № 4.
+# Замініть усі позначки <…> відповідно до вашого варіанта (VARIANTS.md).
+# Перевірка: npm run lint · документація: npm run docs · імітаційний сервер: npm run mock
+openapi: 3.1.0
+info:
+  title: <Назва системи> API
+  version: 1.0.0
+  summary: <Одне речення про призначення API>
+  description: |
+    Варіант № <N>. Виконав(ла): <Прізвище Ім’я>, група 456-Д.
+
+    **Домовленості:** шляхи від `/api/v1`; ресурси – іменники в множині (kebab-case);
+    JSON у camelCase; дати – ISO 8601; колекції – сторінками `{ items, page, pageSize, total }`;
+    помилки – `application/problem+json`; автентифікація – `Authorization: Bearer <токен>`.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Локальний сервер розробки
+tags:
+  - name: auth
+    description: Автентифікація
+  # - name: <ресурс>
+  #   description: <опис>
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вхід у систему
+      x-kss-action: true
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Вхід успішний
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # Приклад структури колекції (розкоментуйте й адаптуйте):
+  # /<resources>:
+  #   get:      список зі сторінками, фільтрами й сортуванням
+  #   post:     створення → 201 + Location
+  # /<resources>/{<resource>Id}:
+  #   get / patch / delete (204)
+  # /<resources>/{<resource>Id}/<sub-resources>:   вкладена колекція
+  # /<resources>/{<resource>Id}/<action>:           дія (x-kss-action: true)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Токен, отриманий через POST /auth/login
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Номер сторінки (з 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Кількість елементів на сторінці
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+
+  headers:
+    Location:
+      description: Адреса створеного ресурсу
+      schema:
+        type: string
+        format: uri-reference
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+      example:
+        email: student@college.example.ua
+        password: student123
+
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+      example:
+        accessToken: 2f1c9a54-8d3e-4b7a-9f1e-6c2d8a4b0e71
+        tokenType: Bearer
+        expiresIn: 3600
+
+    ProblemDetails:
+      type: object
+      description: Опис помилки за RFC 9457
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+    ValidationProblem:
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetails"
+        - type: object
+          required: [errors]
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+  responses:
+    BadRequest:
+      description: Некоректний запит
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    Unauthorized:
+      description: Відсутній або недійсний токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    Forbidden:
+      description: Недостатньо прав
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    NotFound:
+      description: Ресурс не знайдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    Conflict:
+      description: Конфлікт зі станом ресурсу
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    ValidationFailed:
+      description: Дані не пройшли перевірку
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ValidationProblem"
